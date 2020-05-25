@@ -78,7 +78,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="VisGraph.cs" />
+    <Compile Include="src\VisGraph.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
