@@ -7,12 +7,14 @@ using QuickGraph;
 using NetTopologySuite.Geometries;
 using OxyPlot;
 using OxyPlot.Series;
+using QuickGraph.Algorithms;
+using System.Net.Http.Headers;
 
 namespace VisGraph
 {
     public class VisEdge : UndirectedEdge<Coordinate>
     {
-        public double Lenght { get { return Source.Distance(Target); } }
+        public double Length { get { return Source.Distance(Target); } }
         public VisEdge (Coordinate source, Coordinate target) : base(source, target)
         {
 
@@ -27,22 +29,23 @@ namespace VisGraph
         public VisGraph(Polygon polygon)
         {
             Polygon = polygon;
-            if (Polygon.Shell != null)
-            {
-                AddVerticesAndEdgeByRing(Polygon.Shell);
-            }
-            if (Polygon.Holes != null)
-            {
-                foreach (var ring in Polygon.Holes) AddVerticesAndEdgeByRing(ring);
-            }
-            BuildVisGraph();
-
             PlotModel = new PlotModel();
+
+            BuildVisGraph();
             BuildPlotModel();
         }
 
         private void BuildVisGraph()
         {
+            if (Polygon.Shell != null)
+            {
+                AddVisEdgesByLinearRing(Polygon.Shell);
+            }
+            if (Polygon.Holes != null)
+            {
+                foreach (var ring in Polygon.Holes) AddVisEdgesByLinearRing(ring);
+            }
+
             IEnumerable<Coordinate> coords = Polygon.Coordinates;
             for(int i=0; i< coords.Count(); i++)
             {
@@ -59,11 +62,11 @@ namespace VisGraph
                     if (edgeF.Source == pt1 || edgeF.Target == pt1 || edgeL.Source == pt1 || edgeL.Target == pt1) continue;
 
                     //pt1 not adjacent, test the line's relationship with polygon
-                    if (IsVisible(pt0, pt1, Polygon)) AddVerticesAndEdge(new VisEdge(pt0, pt1));
+                    if (IsVisible(pt0, pt1)) AddVerticesAndEdge(new VisEdge(pt0, pt1));
                 }
             }
         }
-        private void AddVerticesAndEdgeByRing(LinearRing ring)
+        private void AddVisEdgesByLinearRing(LinearRing ring)
         {
             IEnumerable<Coordinate> coords = ring.Coordinates;
             for (int i = 0; i < coords.Count(); i++)
@@ -73,19 +76,60 @@ namespace VisGraph
                 AddVerticesAndEdge(new VisEdge(source, target));
             }
         }
-        public bool IsVisible(Coordinate pt0, Coordinate pt1, Polygon polygon)
+        public bool IsVisible(Coordinate pt0, Coordinate pt1)
         {
             Coordinate[] pts = new Coordinate[] { pt0, pt1 };
             LineString lineString = new LineString(pts);
 
-            if (polygon.Covers(lineString)) return true;
+            if (Polygon.Covers(lineString)) return true;
 
             return false;
         }
-
-        private void BuildPlotModel()
+        public List<Coordinate> VisiblePointsByPoint(Coordinate pt0)
         {
-            foreach(VisEdge edge in Edges)
+            List<Coordinate> pts = new List<Coordinate>();
+            for(int i=0; i < Vertices.Count(); i++)
+            {
+                Coordinate pt1 = Vertices.ElementAt(i);
+                if (IsVisible(pt0, pt1)) pts.Add(pt1);
+            }
+            return pts;
+        }
+        public void AddVisEdgesForPoint(Coordinate pt0)
+        {
+            var visPoints = VisiblePointsByPoint(pt0);
+            foreach(var pt1 in visPoints)
+            {
+                AddVerticesAndEdge(new VisEdge(pt0, pt1));
+            }
+        }
+        public IEnumerable<VisEdge> ShortestPathsDijkstraP2P(Coordinate pt0, Coordinate pt1)
+        {
+            Func<VisEdge, double> edgeCost = new Func<VisEdge, double>(e => e.Length);
+            var tryFunc = this.ShortestPathsDijkstra(edgeCost, pt0);
+            IEnumerable<VisEdge> res;
+            tryFunc(pt1, out res);
+            return res;            
+        }
+        public List<IEnumerable<VisEdge>> ShortestPathsDijkstraP2Ps(Coordinate pt0, IEnumerable<Coordinate> pt1s)
+        {
+            List<IEnumerable<VisEdge>> resAll = new List<IEnumerable<VisEdge>>();
+
+            Func<VisEdge, double> func = new Func<VisEdge, double>(e => e.Length);
+            var tryFunc = this.ShortestPathsDijkstra(func, pt0);
+            foreach(Coordinate pt1 in pt1s)
+            {
+                IEnumerable<VisEdge> res;
+                tryFunc(pt1, out res);
+                resAll.Add(res);
+            }
+            return resAll;
+        }
+
+        #region Plot
+        private void BuildPlotModel()
+        { 
+            foreach (VisEdge edge in Edges)
             {
                 LineSeries series = LineSeriesByCoordinates(new Coordinate[] { edge.Source, edge.Target });
                 series.Color = OxyColors.Green;
@@ -117,5 +161,6 @@ namespace VisGraph
             lineSeries.ItemsSource = pts;
             return lineSeries;
         }
+        #endregion
     }
 }
