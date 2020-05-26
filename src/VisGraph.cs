@@ -5,12 +5,12 @@ using System.Text;
 using System.Threading.Tasks;
 using QuickGraph;
 using NetTopologySuite.Geometries;
-using OxyPlot;
-using OxyPlot.Series;
 using QuickGraph.Algorithms;
 using System.Net.Http.Headers;
+using OxyPlot.Series;
+using OxyPlot;
 
-namespace VisGraph
+namespace VisGraphs
 {
     public class VisEdge : UndirectedEdge<Coordinate>
     {
@@ -23,17 +23,51 @@ namespace VisGraph
     public class VisGraph : UndirectedGraph<Coordinate, VisEdge>
     {
         public Polygon Polygon { get; }
-        public PlotModel PlotModel { get; }
+
+        public IEnumerable<VisEdge> PolygonEdges
+        {
+            get
+            {
+                return Edges.Where(e => Polygon.Coordinates.Contains(e.Source) && Polygon.Coordinates.Contains(e.Target));
+            }
+        }
+        public IEnumerable<VisEdge> ShellEdges
+        {
+            get
+            {
+                IEnumerable<Coordinate> shellCoords = Polygon.Shell.Coordinates;
+                return Edges.Where(e => shellCoords.Contains(e.Source) && shellCoords.Contains(e.Target));
+            }
+        }
+        public IEnumerable<VisEdge> HolesEdges
+        {
+            get
+            {
+                IEnumerable<Coordinate> holeCoords = Polygon.Holes.SelectMany(e => e.Coordinates);
+                return Edges.Where(e => holeCoords.Contains(e.Source) && holeCoords.Contains(e.Target));
+            }
+        }
+        public IEnumerable<Coordinate> ForeignVertices
+        {
+            get 
+            {
+                return Vertices.Where(e => !Polygon.Coordinates.Contains(e));
+            }
+        }
+        public IEnumerable<VisEdge> ForeignEdges
+        {
+            get
+            {
+                return Edges.Where(e => ForeignVertices.Contains(e.Source) || ForeignVertices.Contains(e.Target));
+            }
+        }
 
 
         public VisGraph(Polygon polygon)
         {
             Polygon = polygon;
-            PlotModel = new PlotModel();
-
             BuildVisGraph();
         }
-
         private void BuildVisGraph()
         {
             if (Polygon.Shell != null)
@@ -119,7 +153,6 @@ namespace VisGraph
         {
             AddVisEdgesForPoint(pt0);
             AddVisEdgesForPoint(pt1);
-
             try
             {
                 Func<VisEdge, double> edgeCost = new Func<VisEdge, double>(e => e.Length);
@@ -159,54 +192,23 @@ namespace VisGraph
             return resAll;
         }
 
-        #region Plot
-        public void BuildPlotModel()
-        {
-            PlotModel.PlotType = PlotType.Cartesian;
-            PlotModel.Series.Clear();
 
-            foreach (VisEdge edge in Edges)
+        public static List<LineSeries> LineSeriesByVisEdges(IEnumerable<VisEdge> edges)
+        {
+            List<LineSeries> allSeries = new List<LineSeries>();
+            foreach (var edge in edges)
             {
                 LineSeries series = LineSeriesByCoordinates(new Coordinate[] { edge.Source, edge.Target });
-                series.Color = OxyColors.Green;
-                PlotModel.Series.Add(series);
+                allSeries.Add(series);
             }
-            if (Polygon.Shell != null)
-            {
-                LineSeries series = LineSeriesByCoordinates(Polygon.Shell.Coordinates);
-                series.Color = OxyColors.Red;
-                series.LineStyle = LineStyle.Solid;
-                PlotModel.Series.Add(series);
-            }
-            if (Polygon.Holes != null)
-            {
-                foreach (LinearRing ring in Polygon.Holes)
-                {
-                    LineSeries series = LineSeriesByCoordinates(ring.Coordinates);
-                    series.Color = OxyColors.Orange;
-                    series.LineStyle = LineStyle.Solid;
-                    PlotModel.Series.Add(series);
-                }
-            }
-
-
+            return allSeries;
         }
-        public void AddSeriesByVisEdge(IEnumerable<VisEdge> edges)
-        {
-            foreach(var edge in edges)
-            {
-                LineSeries series = LineSeriesByCoordinates(new Coordinate[] { edge.Source, edge.Target });
-                series.Color = OxyColors.Blue;
-                PlotModel.Series.Add(series);
-            }
-        }
-        private LineSeries LineSeriesByCoordinates(IEnumerable<Coordinate> coords)
+        public static LineSeries LineSeriesByCoordinates(IEnumerable<Coordinate> coords)
         {
             IEnumerable<DataPoint> pts = coords.Select(e => new DataPoint(e.X, e.Y));
             LineSeries lineSeries = new LineSeries();
             lineSeries.ItemsSource = pts;
             return lineSeries;
         }
-        #endregion
     }
 }
